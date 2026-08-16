@@ -67,13 +67,33 @@ Requires DeepSeek Harness `0.1.0-rc.5+` and Node `^22.19.0 || >=24.0.0`.
 dsh plugin --profile web add dsh-benign-exit
 
 # or from source
-git clone https://github.com/<you>/dsh-benign-exit
+git clone https://github.com/sunruize93-cmyk/dsh-benign-exit
 cd dsh-benign-exit
 pnpm install
 dsh plugin --profile web add .
 ```
 
-Or merge the insert row from `cordis.patch.yml` into your profile's `cordis.patch.yml`.
+The `dsh.bundle` declaration in this package's `package.json` makes `dsh plugin add` register it as an active profile layer automatically (verified against `0.1.0-rc.5`). After adding it, restart the profile.
+
+To verify it is active, either:
+
+```bash
+dsh --profile web --dump-config | grep benign-exit     # should show the layer
+```
+
+or run a no-match `grep` in the agent and check the result shows
+`(benign: no matching lines — expected, not a failure)` above the exit marker.
+
+### Headless / one-shot tasks
+
+Works for `--profile headless` too:
+
+```bash
+dsh plugin --profile headless add dsh-benign-exit
+dsh --profile headless "search for getLegacyConfig and report whether it exists"
+```
+
+## Configuration
 
 ## Configuration
 

@@ -1,3 +1,11 @@
 node_modules/
 *.log
 .DS_Store
+
+# Never commit credentials or experiment artifacts that could embed them.
+.env
+.env.*
+*.env
+!*.env.example
+*.key
+*.secret
