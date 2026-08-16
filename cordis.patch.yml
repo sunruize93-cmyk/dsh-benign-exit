@@ -1,0 +1,15 @@
+# dsh-benign-exit install manifest.
+#
+# Manual install into a profile's cordis.patch.yml (merge this insert row):
+#
+#   - insert:
+#       - id: dsh-benign-exit
+#         name: 'dsh-benign-exit'
+#
+# Or, from npm/GitHub once published:
+#
+#   dsh plugin --profile web add dsh-benign-exit
+#
+- insert:
+    - id: dsh-benign-exit
+      name: 'dsh-benign-exit'

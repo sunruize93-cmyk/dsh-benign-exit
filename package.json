@@ -1,0 +1,39 @@
+{
+  "name": "dsh-benign-exit",
+  "version": "0.1.0",
+  "description": "Stop DeepSeek Harness from over-investigating benign non-zero exit codes (grep exit 1 = no match, git diff --exit-code = differences, test/which/jq -e, ...).",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test src/"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "exit-code",
+    "agent"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": ">=3.18.1 <4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0 <5"
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}
