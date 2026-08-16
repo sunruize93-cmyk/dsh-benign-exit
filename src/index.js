@@ -5,9 +5,10 @@
 //  1. Result layer (deterministic): a `tools/post-execute` hook rewrites the
 //     model-facing content of bash/pwsh results when the leading command is a
 //     known tool and the exit code is a documented benign outcome (grep exit 1
-//     = no match, git diff --exit-code exit 1 = differences, ...). The model
-//     SEES the exit marked as expected instead of a bare `[exit code: 1]`, so
-//     it does not re-investigate a normal result.
+//     = no match, git diff --exit-code exit 1 = differences, ...). A line like
+//     `(benign: no matching lines — expected, not a failure)` is inserted
+//     ABOVE the `[exit code: 1]` marker, so the model SEES the exit marked as
+//     expected and does not re-investigate a normal result.
 //  2. Prompt layer (reinforcement): a small system-prompt section teaches the
 //     benign exit-code vocabulary so the standing "investigate failures"
 //     guidance is read correctly.
@@ -41,8 +42,8 @@ export const Config = z.object({
 const GUIDANCE = 'Exit codes are information. Commands that legitimately exit 1 on a normal outcome and must NOT be treated as failures: '
   + 'grep/egrep/fgrep/rg/ack (no matching lines), diff/cmp/comm (inputs differ), test/[ (condition false), '
   + 'git grep (no matches), git diff --exit-code / --quiet (differences exist), which/type/command -v (not found), '
-  + 'jq -e (filter evaluated to false or null). When a result marker reads `[exit code: N (benign: ...)]` the exit is expected — '
-  + 'report it as a normal outcome and continue; do not re-investigate it as a failure.'
+  + 'jq -e (filter evaluated to false or null). When a result shows a line like `(benign: no matching lines — expected, not a failure)` '
+  + 'above the `[exit code: N]` marker, the exit is expected — report it as a normal outcome and continue; do not re-investigate it as a failure.'
 
 export function apply(ctx, config) {
   if (config.annotate) {
