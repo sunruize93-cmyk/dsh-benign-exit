@@ -1,7 +1,12 @@
 // End-to-end proof with the REAL bash tool: a real grep invocation that exits
 // 1 (no match) must produce model-facing content annotated as benign by the
 // dsh-benign-exit plugin; real errors (exit 2) and matches (exit 0) must pass
-// through untouched.
+// through untouched; the harness's own parseExitStatus must still read the
+// annotated result's exit code correctly (UI terminal pill stays 1).
+//
+// Run from inside a DeepSeek Harness source checkout:
+//   npx vitest run <path>/verification/dsh-benign-exit.real-bash.spec.ts
+// Set DSH_BENIGN_EXIT_PATH if the plugin lives elsewhere.
 import { describe, expect, it } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,8 +21,10 @@ import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { parseExitStatus } from '@deepseek-ai/dsh-shell'
 
-const PLUGIN_PATH = '/Users/sunruize/Desktop/dsh-benign-exit/src/index.js'
+const PLUGIN_PATH = process.env.DSH_BENIGN_EXIT_PATH
+  ?? '/Users/sunruize/Desktop/dsh-benign-exit/src/index.js'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-benign-exit-'))
 
@@ -111,5 +118,36 @@ describe('dsh-benign-exit with the real bash tool', () => {
     const text = textOf(result)
     expect(text).toContain('benign: differences exist')
     expect(text).toContain('(benign:')
+  })
+
+  it('preserves the harness parseExitStatus contract: annotated result still reads exit 1', async () => {
+    const ctx = await setup()
+    const agent = registerFakeAgent(ctx, 'sess-5')
+    const file = join(spillDir, 'parse-exit.txt')
+    writeFileSync(file, 'alpha\nbeta\n')
+
+    const result = await call(ctx, { command: `grep zeta ${file}`, description: "search for zeta" }, agent)
+    const text = textOf(result)
+    expect(text).toContain('(benign: no matching lines')
+    // The real exit marker must remain the literal final line, so the UI
+    // terminal card (parseExitStatus) still shows exit 1.
+    const parsed = parseExitStatus(text)
+    expect(parsed.exitCode).toBe(1) // UI pill stays 1 — contract preserved
+    expect(parsed.body).toContain('benign: no matching lines') // model still sees it
+    expect(parsed.body).not.toContain('[exit code: 1]') // marker parsed out of the body
+  })
+
+  it('does NOT annotate when a matching line itself reads "[exit code: 1]" (real exit 0)', async () => {
+    const ctx = await setup()
+    const agent = registerFakeAgent(ctx, 'sess-6')
+    const file = join(spillDir, 'marker-line.txt')
+    writeFileSync(file, 'config line [exit code: 1]\n')
+
+    // grep MATCHES the file (exit 0); the matched content contains the string
+    // "[exit code: 1]" but it is NOT a real exit marker.
+    const result = await call(ctx, { command: `grep code ${file}`, description: "search for code" }, agent)
+    const text = textOf(result)
+    expect(text).toContain('[exit code: 1]')
+    expect(text).not.toContain('benign')
   })
 })

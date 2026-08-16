@@ -1,29 +1,32 @@
 # dsh-benign-exit
 
-A DeepSeek Harness plugin that stops agents from **over-investigating benign non-zero exit codes**.
+Deterministically annotate benign non-zero bash/pwsh exit codes in DeepSeek Harness so models can stop **over-investigating normal results**.
 
 `grep` exits `1` when nothing matches — that is normal, not a failure. But DeepSeek Harness's bash tool tells the model:
 
 > "Check the `[exit code: N]` marker on every bash result; **investigate failures before moving on**."
 
-So a model that runs `grep` and finds nothing sees `[exit code: 1]`, reads the standing instruction as "this failed, investigate", and starts re-checking — a self-reinforcing verification loop that burns requests, time, and tokens on a perfectly normal result.
+A model that runs `grep` and finds nothing sees `[exit code: 1]`, may read the standing instruction as "this failed, investigate", and can re-check a perfectly normal result — burning requests and tokens.
 
-This plugin makes the exit code **self-describing**: when the leading command is a known tool and the exit code is a documented benign outcome, the model-facing result is annotated so the model sees *why* the exit is normal — and is not prompted to investigate it.
+This plugin makes the exit code **self-describing** at the layer the model actually sees: when the leading command is a known tool and the exit code is a documented benign outcome, the model-facing result is annotated so the model sees *why* the exit is normal.
+
+> **Scope of this claim.** The plugin provably changes what the model sees for benign outcomes (verified against the real harness machinery below). Whether that measurably reduces requests/time/tokens depends on model behavior and task; we have **not** run a live model yet and make no impact claim.
 
 ## How it works
 
 Two layers:
 
-1. **Result layer (deterministic).** A `tools/post-execute` hook rewrites the model-facing content of `bash` / `pwsh` results. For example, a real `grep` run that found nothing renders as:
+1. **Result layer (deterministic).** A `tools/post-execute` hook rewrites the model-facing content of `bash` / `pwsh` results, but only when the structured result confirms a real non-zero exit (no signal kill, no timeout, no abort). For example, a real `grep` run that found nothing renders as:
 
    ```
    (no output)
-   [exit code: 1 (benign: no matching lines — expected, not a failure)]
+   (benign: no matching lines — expected, not a failure)
+   [exit code: 1]
    ```
 
-   The model sees the exit explicitly marked as expected — this is a change to what the model *sees*, so it does not depend on the model's mood or the prompt wording.
+   The model sees the exit marked as expected — a change to what the model *sees*, independent of model mood or prompt wording.
 
-2. **Prompt layer (reinforcement).** A small system-prompt section teaches the benign exit-code vocabulary, so the standing "investigate failures" guidance is read correctly.
+2. **Prompt layer (reinforcement).** A small system-prompt section teaches the benign exit-code vocabulary, so the standing "investigate failures" guidance is read correctly. (The harness's own instruction is not removed; this is a corrective note, not a replacement.)
 
 ## What counts as benign
 
@@ -51,6 +54,7 @@ The annotation is inserted as a line **above** the real `[exit code: N]` marker 
 - **Terminal channels** (`terminal_send` / `terminal_read`): a different marker format (`exited code=N`); not annotated.
 - **Explicit paths** (`./script.sh`): never treated as a known tool.
 - **Real failures** (`grep` exit 2, any unknown command, any exit not in the table): untouched. The built-in table is authoritative — user extra rules can never mask a real failure for a built-in command.
+- **Windows pwsh kills**: on Windows a killed pwsh process settles as bare exit 1 with no signal marker, so on Windows hosts the plugin does **not** annotate pwsh results at all (a real kill must not be masked). On macOS/Linux, pwsh kills report a signal and are skipped by the structured-exit gate. pwsh is hooked by design but has no e2e coverage in this repo (no PowerShell here).
 
 Also note: DeepSeek Harness ships a `grep` *tool* (`@deepseek-ai/dsh-tool-fs-search`, in the base bundle) that already steers file-content search away from shell `grep` and returns "0 matches" as a success. The remaining exposure this plugin addresses is therefore mostly **non-file-search greps** (`git grep`, greps over command output), other benign exits (`git diff --exit-code`, `test -f`, `which`, `diff`, `rg`, `jq -e`), and the model's *standing instruction* to investigate every non-zero exit.
 
@@ -97,25 +101,27 @@ Example:
 
 ## Verification
 
-> **Honest scope of what has and hasn't been proven.** No end-to-end agent runs with a real LLM have been performed yet — the token/time/cost *impact* therefore is not measured by us. What *is* proven, against the real harness machinery:
+> **What is proven / what is not.** No end-to-end agent runs with a real LLM have been performed yet — the token/time/cost *impact* is not measured by us and no behavioral claim is made. What *is* proven, against the real harness machinery:
 
-- **28 unit tests** of the parser/annotator (edge cases, compound commands, masking-prevention, last-marker anchoring).
-- **6 integration tests** inside the real `ToolRuntime` dispatch pipeline (`tools/post-execute` waterfall): benign markers get annotated, real errors and unknown commands pass through, non-bash tools unaffected, the system-prompt section registers.
-- **4 end-to-end tests with the REAL bash tool** (spawning real `grep`/`git` processes): a real no-match `grep` produces model-facing content `[exit code: 1 (benign: no matching lines — expected, not a failure)]`; a real `grep` error (exit 2) and a matching `grep` (exit 0) pass through untouched; `git diff --exit-code` with differences is annotated.
+- **36 unit tests** of the parser/annotator (edge cases, compound-command rejection, masking-prevention, structured-exit gating, wrapper forms, last-marker anchoring).
+- **10 integration tests** inside the real `ToolRuntime` dispatch pipeline (`tools/post-execute` waterfall): benign markers get annotated; real errors (exit 2), unknown commands, non-bash tools, **exit-0 runs whose output merely contains `[exit code: 1]`**, **signal-killed runs**, and **timed-out runs** all pass through untouched; downstream `additionalContexts` survive; the system-prompt section registers.
+- **6 end-to-end tests with the REAL bash tool** (spawning real `grep`/`git` processes): a real no-match `grep` produces model-facing content `(benign: no matching lines — expected, not a failure)\n[exit code: 1]`; real `grep` error (exit 2) and matching `grep` (exit 0) pass through untouched; `git diff --exit-code` with differences is annotated; and the harness's own `parseExitStatus` still reads the annotated result as exit **1** (UI exit pill intact).
 
 Run them yourself:
 
 ```bash
 cd dsh-benign-exit && npm test                       # unit tests
-# integration + real-bash tests live in the harness repo:
-#   verification/*.spec.ts  (see README section below)
+# integration + real-bash tests run inside a DeepSeek Harness source checkout:
+#   npx vitest run <path-to>/verification/dsh-benign-exit.integration.spec.ts
+#   npx vitest run <path-to>/verification/dsh-benign-exit.real-bash.spec.ts
+#   (set DSH_BENIGN_EXIT_PATH if the plugin lives elsewhere)
 ```
 
-Third-party field data (Bohu, 2026-08) measured dsh at 61 vs 32 requests, 10:38 vs 4:55 wall time, and $0.17 vs $0.05 cost on the same task vs `pi` — consistent with the over-investigation mechanism fixed here. We have **not** reproduced those numbers ourselves; the mechanism, not the magnitude, is what this plugin addresses.
+Third-party field data (Bohu, 2026-08) measured dsh at 61 vs 32 requests, 10:38 vs 4:55 wall time, and **2.9M vs 548K input tokens**, and $0.17 vs $0.05 cost on the same task vs `pi`. That benchmark compares structurally different harnesses (its attribution to this one mechanism is the author's hypothesis, not an isolated experiment), and we have **not** reproduced the numbers. The over-investigation loop is the mechanism this plugin targets; it does not claim to close the whole gap.
 
 ## Compatibility
 
-- Tested against `0.1.0-rc.5` (`tool-bash`/`dsh-tools`), cordis `4.0.1`, schemastery `3.18.1`.
+- Tested against DeepSeek Harness `0.1.0-rc.5` (`tool-bash`/`dsh-tools`) as of 2026-08-17, cordis `4.0.1`, schemastery `3.18.1`. All verification in this README is pinned to this revision.
 - DeepSeek Harness is in developer preview ("THERE WILL BE COMPATIBILITY-BREAKING CHANGES"). Pin versions; this plugin locks to the injected `tools/post-execute` and `systemPrompt` seams, which are core and stable.
 
 ## License

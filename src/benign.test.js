@@ -64,6 +64,29 @@ test('parse: test and [ are identified', () => {
   assert.equal(parseLeadingCommand('[ -f package.json ]')?.base, '[')
 })
 
+test('parse: wrapper option forms (sudo -u, sudo -E, env -i, nice)', () => {
+  assert.equal(parseLeadingCommand('sudo -u deploy grep foo file')?.base, 'grep')
+  assert.equal(parseLeadingCommand('sudo -E grep foo file')?.base, 'grep')
+  assert.equal(parseLeadingCommand('env -i grep foo file')?.base, 'grep')
+  assert.equal(parseLeadingCommand('nice -n 5 grep foo file')?.base, 'grep')
+})
+
+test('parse: timeout flag forms', () => {
+  assert.equal(parseLeadingCommand('timeout -k 1 10 grep foo file')?.base, 'grep')
+  assert.equal(parseLeadingCommand('timeout --signal=KILL 5m grep foo file')?.base, 'grep')
+  assert.equal(parseLeadingCommand('timeout 10s grep foo file')?.base, 'grep')
+})
+
+test('parse: git -C and --no-pager before subcommand', () => {
+  assert.equal(parseLeadingCommand('git -C repo diff --exit-code HEAD')?.base, 'git diff')
+  assert.equal(parseLeadingCommand('git --no-pager grep FIXME src')?.base, 'git grep')
+})
+
+test('annotate: jq --exit-status works like -e', () => {
+  const r = annotateBenignExit(EXIT1, "jq --exit-status '.foo' x.json")
+  assert.equal(r.changed, true)
+})
+
 // --- annotation ---
 
 test('annotate: grep exit 1 → marked benign', () => {
@@ -171,6 +194,25 @@ test('annotate: extraRules extend the table', () => {
   }])
   assert.equal(r.changed, true)
   assert.match(r.text, /benign: no changes to apply/)
+})
+
+test('annotate: expectedExitCode mismatch prevents annotation', () => {
+  // exit-0 run whose output merely contains "[exit code: 1]" — no annotation.
+  const r = annotateBenignExit('match line\n[exit code: 1]', 'grep foo file', [], 0)
+  assert.equal(r.changed, false)
+})
+
+test('annotate: expectedExitCode agreement annotates', () => {
+  const r = annotateBenignExit('(no output)\n[exit code: 1]', 'grep foo file', [], 1)
+  assert.equal(r.changed, true)
+})
+
+test('annotate: non-integer extra exit codes are ignored', () => {
+  const r = annotateBenignExit(EXIT1, 'mytool run', [{
+    command: 'mytool', exitCodes: [1.5, -3, NaN, 1], reason: 'edge',
+  }])
+  assert.equal(r.changed, true)
+  assert.match(r.text, /benign: edge/)
 })
 
 test('annotate: extraRules cannot override a REAL error for grep', () => {

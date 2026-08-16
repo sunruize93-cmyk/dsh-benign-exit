@@ -115,20 +115,44 @@ export function parseLeadingCommand(raw, depth = 0) {
   if (hasTopLevelOperators(cmd)) return null
 
   // Strip leading environment assignments (FOO=1 BAR=2 cmd ...) and
-  // privilege / no-op wrappers (sudo, nohup, env), in any interleaving.
-  // `command -v` is handled later because it is itself a meaningful leading
-  // command (exit 1 = not found).
+  // privilege / no-op wrappers (sudo, nohup, env, nice) with their common
+  // option forms, in any interleaving. `command -v` is handled later because
+  // it is itself a meaningful leading command (exit 1 = not found).
   for (let i = 0; i < 8; i++) {
     const assign = cmd.match(/^(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+)+/)
     if (assign) { cmd = cmd.slice(assign[0].length); continue }
-    const wrapper = cmd.match(/^(?:sudo|nohup|env)\s+/)
-    if (wrapper) { cmd = cmd.slice(wrapper[0].length); continue }
+    // Option parsing is conservative: only options known to TAKE A VALUE
+    // consume one. A generic `-\w+\s*\S*` form would greedily swallow the
+    // command itself (e.g. `sudo -E grep foo` → "grep" as -E's value), which
+    // can misidentify the real command — a false-positive risk, not just a
+    // miss. `-u` (sudo) and `-u`/`-C` (env) are the common value-taking ones.
+    const sudo = cmd.match(/^sudo(?:\s+-u\s+\S+|\s+-[A-Za-z])*\s+/)
+    if (sudo) { cmd = cmd.slice(sudo[0].length); continue }
+    const envW = cmd.match(/^env(?:\s+-u\s+\S+|\s+-C\s+\S+|\s+-[A-Za-z])*\s+/)
+    if (envW) { cmd = cmd.slice(envW[0].length); continue }
+    const nice = cmd.match(/^nice(?:\s+-n\s+\d+(?:\.\d+)?)?\s+/)
+    if (nice) { cmd = cmd.slice(nice[0].length); continue }
+    const nohup = cmd.match(/^nohup\s+/)
+    if (nohup) { cmd = cmd.slice(nohup[0].length); continue }
     break
   }
 
-  // Strip `timeout [opts] DURATION cmd ...`.
-  const timeout = cmd.match(/^timeout(?:\s+(?:-\w+\s+)*\d+(?:\.\d+)?[smhd]?)?\s+/)
-  if (timeout) cmd = cmd.slice(timeout[0].length)
+  // Strip `timeout [opts] DURATION cmd ...` (flags and duration in any form).
+  // The main duration is the LAST token that looks like a duration; anything
+  // after it is the real command.
+  if (/^timeout\b/.test(cmd)) {
+    const rest = cmd.slice('timeout'.length).trimStart()
+    const toks = rest.split(/\s+/)
+    let durationIdx = -1
+    for (let i = toks.length - 1; i >= 0; i--) {
+      if (/^\d+(?:\.\d+)?[smhd]?$/.test(toks[i])) { durationIdx = i; break }
+    }
+    if (durationIdx >= 0 && durationIdx < toks.length - 1) {
+      cmd = toks.slice(durationIdx + 1).join(' ')
+    } else {
+      return null // ambiguous timeout form — treat as unknown
+    }
+  }
 
   // Unwrap `sh -c '...'` / `bash -c "..."` — the inner command's exit code is
   // what the shell reports, so it is safe (and useful) to inspect the inner
@@ -138,22 +162,34 @@ export function parseLeadingCommand(raw, depth = 0) {
     return parseLeadingCommand(stripOuterQuotes(shell[1]), depth + 1)
   }
 
-  const tokens = firstTokens(cmd, 8)
+  const tokens = firstTokens(cmd, 12)
   if (tokens.length === 0) return null
 
-  const [first, second] = tokens
+  const first = tokens[0]
   if (first.includes('/')) return null // explicit path — could be any script
 
-  if (first === 'command' && second === '-v') return { base: 'command-v', flags: [] }
-  if (first === 'command') return null // command SUBCOMMAND — treat as unknown
+  if (first === 'command') {
+    if (tokens[1] === '-v') return { base: 'command-v', flags: [] }
+    return null // command SUBCOMMAND — treat as unknown
+  }
 
   if (first === 'git') {
-    if (!second) return null
-    if (second === 'grep') return { base: 'git grep', flags: tokens.slice(2) }
-    const rest = tokens.slice(2)
+    // Skip global git flags before the subcommand: `-C <dir>`, `--no-pager`,
+    // `--paginate`, `--git-dir=X`, `--work-tree=X`.
+    let idx = 1
+    while (idx < tokens.length) {
+      const t = tokens[idx]
+      if (t === '-C' || t === '--git-dir' || t === '--work-tree') { idx += 2; continue }
+      if (t === '--no-pager' || t === '--paginate') { idx += 1; continue }
+      break
+    }
+    const sub = tokens[idx]
+    if (!sub) return null
+    const rest = tokens.slice(idx + 1)
+    if (sub === 'grep') return { base: 'git grep', flags: rest }
     const hasExitCodeFlag = rest.includes('--exit-code') || rest.includes('--quiet')
-    if (second === 'diff' && hasExitCodeFlag) return { base: 'git diff', flags: rest }
-    if (second === 'diff-index' && hasExitCodeFlag) return { base: 'git diff-index', flags: rest }
+    if (sub === 'diff' && hasExitCodeFlag) return { base: 'git diff', flags: rest }
+    if (sub === 'diff-index' && hasExitCodeFlag) return { base: 'git diff-index', flags: rest }
     return null
   }
 
@@ -170,15 +206,25 @@ export function parseLeadingCommand(raw, depth = 0) {
  *
  * Returns null when the command has no benign outcomes worth annotating.
  */
+/** Guard: only positive integer exit codes (1–255) are ever annotated. */
+function isRealExitCode(code) {
+  return Number.isInteger(code) && code > 0 && code < 256
+}
+
 export function effectiveTable(parsed, extraRules = []) {
   if (!parsed || !parsed.base) return null
-  if (parsed.base === 'jq' && !(parsed.flags ?? []).includes('-e')) return null
+  if (parsed.base === 'jq') {
+    const flags = parsed.flags ?? []
+    if (!flags.includes('-e') && !flags.includes('--exit-status')) return null
+  }
   const builtin = BENIGN_CODES[parsed.base]
   if (builtin) return Object.keys(builtin).length > 0 ? { ...builtin } : null
   const map = {}
   for (const rule of extraRules ?? []) {
     if (!rule || rule.command !== parsed.base || !Array.isArray(rule.exitCodes)) continue
-    for (const code of rule.exitCodes) map[String(code)] = rule.reason
+    for (const code of rule.exitCodes) {
+      if (isRealExitCode(code)) map[String(code)] = rule.reason
+    }
   }
   return Object.keys(map).length > 0 ? map : null
 }
@@ -193,10 +239,15 @@ const EXIT_MARKER = /\[exit code: (\d+)\]/g
  * card) requires the marker to remain the literal final line
  * `/\n\[exit code: (\d+)\]$/`, so the marker text itself must not change.
  *
+ * `expectedExitCode` (optional) is the structured exit code from the result's
+ * value; when given, the last text marker must agree with it. The caller gates
+ * on the structured value (non-zero, no signal, no timeout), which is what
+ * makes the last text marker trustworthy.
+ *
  * Returns the (possibly unchanged) text plus a `changed` flag.
  * Idempotent: text that already contains an annotation is left alone.
  */
-export function annotateBenignExit(text, command, extraRules = []) {
+export function annotateBenignExit(text, command, extraRules = [], expectedExitCode) {
   if (typeof text !== 'string' || !text.includes('[exit code:')) {
     return { text, changed: false }
   }
@@ -212,6 +263,7 @@ export function annotateBenignExit(text, command, extraRules = []) {
   if (matches.length === 0) return { text, changed: false }
   const last = matches[matches.length - 1]
   const code = last[1]
+  if (expectedExitCode !== undefined && String(expectedExitCode) !== code) return { text, changed: false }
   const reason = table[code]
   if (!reason) return { text, changed: false }
 

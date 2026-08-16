@@ -1,7 +1,7 @@
 {
   "name": "dsh-benign-exit",
   "version": "0.1.0",
-  "description": "Stop DeepSeek Harness from over-investigating benign non-zero exit codes (grep exit 1 = no match, git diff --exit-code = differences, test/which/jq -e, ...).",
+  "description": "Deterministically annotate benign non-zero bash/pwsh exit codes in DeepSeek Harness (grep exit 1 = no match, git diff --exit-code = differences, test/which/jq -e) so models stop re-investigating normal results.",
   "type": "module",
   "main": "src/index.js",
   "exports": {

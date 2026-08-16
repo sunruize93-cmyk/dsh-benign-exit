@@ -26,6 +26,25 @@ export const inject = ['systemPrompt']
 /** The harness's bash and pwsh tools both use a `command` argument. */
 const SHELL_TOOLS = new Set(['bash', 'pwsh'])
 
+/**
+ * Extract a trustworthy non-zero exit code from a result's structured value,
+ * or null. The text marker alone is not trustworthy: the harness appends
+ * `[exit code: N]` ONLY for a non-zero exit, so on exit 0 a literal
+ * `[exit code: 1]` in the output is content, not the exit. Signal kills and
+ * timeouts also render without a real exit marker. This gate is what makes
+ * the last text marker reliable.
+ */
+function realNonZeroExit(value) {
+  if (!value || typeof value !== 'object') return null
+  const { exitCode, signal, timedOut, aborted } = value
+  if (typeof exitCode !== 'number' || !Number.isInteger(exitCode) || exitCode <= 0) return null
+  if (signal != null) return null // killed by signal — no real exit code
+  if (timedOut === true || aborted === true) return null // cut short — not a normal exit
+  return exitCode
+}
+
+const IS_WINDOWS = process.platform === 'win32'
+
 export const Config = z.object({
   /** Rewrite benign non-zero exit markers in tool results (the core fix). */
   annotate: z.boolean().default(true),
@@ -54,31 +73,46 @@ export function apply(ctx, config) {
       if (downstream.kind !== 'accept') return downstream
       if (downstream.content !== undefined || downstream.value !== undefined) return downstream
       if (!SHELL_TOOLS.has(exec.name)) return downstream
+      // On Windows a killed pwsh settles as bare exit 1 with no signal marker,
+      // so a "benign" annotation there would mask a real kill. Conservative.
+      if (IS_WINDOWS && exec.name === 'pwsh') return downstream
 
       const args = exec.arguments
       const command = args && typeof args.command === 'string' ? args.command : ''
       if (!command) return downstream
+
+      // Trust only a structured, real non-zero exit (no signal, no timeout,
+      // no abort). This prevents annotating output that merely CONTAINS a
+      // `[exit code: 1]` line on a successful or interrupted run.
+      const exitCode = realNonZeroExit(result.value)
+      if (exitCode == null) return downstream
 
       const content = result.content
       if (!Array.isArray(content)) return downstream
 
       const blocks = content.map((block) => {
         if (!block || block.type !== 'text' || typeof block.text !== 'string') return block
-        const r = annotateBenignExit(block.text, command, config.extraRules)
+        const r = annotateBenignExit(block.text, command, config.extraRules, exitCode)
         return r.changed ? { ...block, text: r.text } : block
       })
       const changed = blocks.some((b, i) => b !== content[i])
       if (!changed) return downstream
 
-      return { kind: 'accept', content: blocks }
+      // Preserve any context a downstream handler attached (harness merges
+      // decision.additionalContexts; dropping it would silently break it).
+      const withContext = downstream.additionalContexts?.length
+        ? { additionalContexts: downstream.additionalContexts }
+        : {}
+      return { kind: 'accept', content: blocks, ...withContext }
     })
   }
 
   if (config.promptSection) {
     ctx.systemPrompt.section({
       name: 'benign-exit:guidance',
-      // Just after the harness's own tool guidance (order 105).
-      order: 106,
+      // After the harness's tool guidance (grep 104, bash 105, terminal/jobs
+      // 106); 107 keeps it clear of existing order-106 sections.
+      order: 107,
       text: GUIDANCE,
     })
   }
