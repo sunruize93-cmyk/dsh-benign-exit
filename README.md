@@ -137,7 +137,15 @@ cd dsh-benign-exit && npm test                       # unit tests
 #   (set DSH_BENIGN_EXIT_PATH if the plugin lives elsewhere)
 ```
 
-Third-party field data (Bohu, 2026-08) measured dsh at 61 vs 32 requests, 10:38 vs 4:55 wall time, and **2.9M vs 548K input tokens**, and $0.17 vs $0.05 cost on the same task vs `pi`. That benchmark compares structurally different harnesses (its attribution to this one mechanism is the author's hypothesis, not an isolated experiment), and we have **not** reproduced the numbers. The over-investigation loop is the mechanism this plugin targets; it does not claim to close the whole gap.
+### Real before/after experiment (2026-08-17)
+
+We ran a real before/after comparison on `deepseek-v4-flash` (24 headless runs: 4 tasks × 3 rounds × with/without the plugin). Full raw data + report: [`results/experiment-20260817/`](results/experiment-20260817/report.md).
+
+Aggregate over the 24 runs: **≈13% fewer steps, ≈20% fewer billed input tokens, ≈22% lower estimated cost**. Answers were equivalent with and without the plugin on every task.
+
+Honest caveats (same report): the win is **not uniform** — it concentrates in tasks where the model repeatedly re-verifies via shell (task 2: −31% steps, −38% billed input); one task was noisy (worse), one neutral. Also, the harness steers file-content search to its built-in `grep` tool (out of this plugin's scope), so the measured savings are a **conservative lower bound** for bash-heavy workflows.
+
+Third-party field data (Bohu, 2026-08) measured dsh at 61 vs 32 requests, 10:38 vs 4:55 wall time, and **2.9M vs 548K input tokens**, and $0.17 vs $0.05 cost on the same task vs `pi`. That benchmark compares structurally different harnesses (its attribution to this one mechanism is the author's hypothesis, not an isolated experiment), and we have not reproduced those numbers. The over-investigation loop is the mechanism this plugin targets; it does not claim to close the whole gap.
 
 ## Compatibility
 
