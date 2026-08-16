@@ -1,0 +1,34 @@
+## Result: **FAIL**
+
+Files in `src/` **do** import the string `"react"` — 125 distinct files, 169 import lines in total.
+
+### How I checked (shell commands)
+
+1. **Located all `src/` directories** (excluding `node_modules`, `.git`, `vendor`): 230 trees found.
+2. **Searched every source file** under those `src/` trees for import statements referencing react:
+   ```sh
+   grep -rniE --include='*.{ts,tsx,js,jsx,mjs,cjs}' \
+     "(from[[:space:]]+['\"]react\b|require[[:space:]]*\([[:space:]]*['\"]react\b|^[[:space:]]*import[[:space:]]+['\"]react\b|export[[:space:]].*from[[:space:]]+['\"]react\b)" <src dirs>
+   ```
+3. **Confirmed the search actually found matches** (not zero):
+   - **169** matching import lines
+   - **125** distinct files with at least one match
+   - Import specifiers found: `react` (158), `react-dom` (8), `react-dom/client` (2), `react/jsx-runtime` (1)
+4. **Spot-checked samples** to rule out regex false positives:
+   - `packages/client/web/src/app.tsx:8` → `import type { ReactNode } from 'react'`
+   - `packages/extensions/cordis-client-runner/src/client/evaluator.ts:10` → `import * as React from 'react'`
+   - `packages/client/ui-model-selection/src/client/ModelSelect.tsx:17` → `} from 'react'` (multiline import ending)
+   - A plain `grep -nw react` cross-check on one file independently confirmed the same line.
+
+### Sample of offending files
+
+| File | Import |
+|---|---|
+| `packages/extensions/cordis-client-runner/src/client/evaluator.ts` | `import * as React from 'react'` |
+| `packages/extensions/ui-cordis/src/client/CordisPanel.tsx` | `import { useEffect, useRef, useState } from 'react'` |
+| `packages/client/web/src/AppRoot.tsx` | `import { useSyncExternalStore } from 'react'` |
+| `packages/client/web/src/boot.tsx` | `import { createRoot, type Root } from 'react-dom/client'` |
+| `packages/client/web/src/seed.ts` | `import * as ReactJsxRuntime from 'react/jsx-runtime'` |
+| `packages/test-support/client-runtime/src/index.ts` | `import { createElement, Fragment, useSyncExternalStore } from 'react'` |
+
+**Verdict: FAIL** — 125 files under `src/` import the string `"react"` (including subpath imports like `react-dom` and `react/jsx-runtime`).

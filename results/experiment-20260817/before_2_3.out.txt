@@ -1,0 +1,25 @@
+## Result: **FAIL**
+
+The search confirmed it found matches — not zero. The verification claim ("no file in `src/` imports the string `react`") is false.
+
+### What I ran (shell commands)
+
+There is no single top-level `src/` in this repo — it's a monorepo with **239 `src/` directories**. I searched all files under every `src/` directory (excluding `node_modules`/`.git`):
+
+1. **Broad search** — `grep -rIn "react"` over all `src/` dirs → **221 matching lines** across **149 files**.
+2. **Import-filter** — of those, lines that are `import`/`require(`/`import(` statements → **176 lines** across **124 distinct files**.
+3. **Re-export check** — `export ... from 'react'` lines → **0** (no extra matches missed).
+
+### Confirmed examples of the matches found
+
+```
+./packages/client/web/src/seed.ts:9:import * as React from 'react'
+./packages/client/ui-conversation/src/client/chat/ChatView.tsx: import { ... } from 'react'
+./packages/client/ui-primitives/src/Button.tsx:4:import type { ButtonHTMLAttributes, ReactNode } from 'react'
+./packages/test-support/client-runtime/src/index.ts:21:import { act, render, within } from '@testing-library/react'
+./packages/client/ui-primitives/src/Tooltip.tsx:11:import { cloneElement, useCallback, ... } from 'react'
+```
+
+### Verdict
+
+**FAIL** — 124 files under `src/` directories import the string "react" (176 import lines), so the assertion "no file in src/ imports the string `react`" does not hold. Most are React UI packages (`packages/client/ui-*`, `packages/client/web*`, `packages/extensions/ui-cordis`, etc.).

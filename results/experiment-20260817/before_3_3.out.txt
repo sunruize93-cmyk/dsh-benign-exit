@@ -1,0 +1,7 @@
+**NO**
+
+The file `nonexistent-module.ts` does not exist anywhere under `src/` in this repository.
+
+**Check run:** `find /private/tmp/dsh-verify -type f -name 'nonexistent-module.ts' -path '*/src/*' -not -path '*/node_modules/*' 2>/dev/null | grep -q .`
+
+**Exact exit status: `1`** (grep's `-q` returned 1 because no matching file was found; exit status 0 would mean it exists).

@@ -1,0 +1,3 @@
+Searched the entire repository with shell commands (`grep -rn`) — including all file types, a case-insensitive pass, and substring variants (`legacyConfig`, `LegacyConfig`, `LEGACY_CONFIG`) across `packages/`, `vendor/`, `apps/`, `docs/`, `scripts/`, and `examples/`.
+
+NOT_FOUND

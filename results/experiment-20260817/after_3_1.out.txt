@@ -1,0 +1,9 @@
+**NO** — `nonexistent-module.ts` does not exist under any `src/` directory.
+
+Check run (shell existence check):
+```bash
+find . -path '*/src/nonexistent-module.ts' -print | grep -q .
+```
+
+- **Exit status: `1`** — `grep -q .` found no matching lines (find printed nothing), i.e., the file was not found. Exit 1 is the normal "no match" outcome for grep, not a failure.
+- The search space was valid: there are **415 `src/` directories** beneath the workspace (packages, examples, scripts, etc.), so the check genuinely covered every `*/src/` tree.

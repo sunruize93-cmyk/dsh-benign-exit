@@ -1,0 +1,10 @@
+NOT_FOUND
+
+Searched the entire tree with shell commands:
+
+- `grep -rn "getLegacyConfig" .` (whole tree, including `node_modules/`) → 0 matches (exit 1)
+- `grep -rn "getLegacyConfig" .` excluding `node_modules` → 0 matches
+- Case-insensitive `grep -rni "getlegacyconfig" .` → 0 matches
+- Codebase-only `grep -rn "LegacyConfig" --exclude-dir=node_modules .` → 0 matches
+
+The only case-insensitive hits for `legacyconfig` anywhere were third-party `node_modules` types (`eslint`'s `LegacyConfig`/`LegacyConfigObject`, `@vue/runtime-core`'s `LegacyConfig` type) — no function named `getLegacyConfig` exists in the codebase.

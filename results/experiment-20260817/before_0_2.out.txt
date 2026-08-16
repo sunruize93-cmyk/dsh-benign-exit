@@ -1,0 +1,9 @@
+## NOT_FOUND
+
+I searched the codebase with shell commands and found **zero references** to `getLegacyConfig`:
+
+1. `grep -rn "getLegacyConfig" .` across the entire tree (excluding `.git`): exit code 1, no matches
+2. `grep -rni "getlegacyconfig" .` case-insensitive: exit code 1, no matches
+3. `git grep -n "getLegacyConfig"` (case-sensitive and case-insensitive) over git-tracked files, including at HEAD: exit code 1, no matches
+
+A sanity check confirmed the search was actually traversing source (e.g., it matched `export function` in `packages/core/src`), so the negative result is reliable: the function **does not exist anywhere** in this codebase — it is neither defined nor used.

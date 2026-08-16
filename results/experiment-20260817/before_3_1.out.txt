@@ -1,0 +1,10 @@
+**NO** — the file `nonexistent-module.ts` does not exist anywhere under `src/`.
+
+Command run (recursive shell existence check):
+
+```sh
+find src -name "nonexistent-module.ts" | grep -q . ; status=$?; echo "exit_status=$status"
+```
+
+- **Exact exit status: `1`** (from `grep -q`, which returns 1 when no matching line exists).
+- Note: `find` also reported `src: No such file or directory` on stderr — there is no `src/` directory in the current workspace (`/private/tmp/dsh-verify`) at all, so no `nonexistent-module.ts` (or any other file) exists under it.

@@ -1,0 +1,8 @@
+**NO.** The file `nonexistent-module.ts` does not exist under any `src/` directory in the repository.
+
+This repo has no top-level `src/` directory — source lives in per-package `src/` dirs (`packages/*/src`, `apps/*/src`, `vendor/*/src`, `python/*/src`) — so I ran the existence check across all of them:
+
+- `find . -type f -path '*/src/*' -name 'nonexistent-module.ts' -print | grep -q .` → **exit status: 1** (no matches — file not found anywhere under a `src/` directory)
+- `test -d src` (does a root `src/` exist at all) → **exit status: 1** (no such directory)
+
+The exit status of 1 from `grep -q` means "no matching lines," i.e., the file does not exist. (An initial `find src ...` also returned exit 1 with `src: No such file or directory`, confirming there is no top-level `src/` to search.)

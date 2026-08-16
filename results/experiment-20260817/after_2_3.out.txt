@@ -1,0 +1,23 @@
+Verification complete. The search found **many** matches, so the check **FAILS**.
+
+## Evidence (from shell search)
+
+Ran `grep -rn "react"` across every `src/` directory in the repo (all `packages/*/*/src`, `apps/*/src`, `python/*/src`, excluding `node_modules`, `.git`, `vendor`):
+
+| Search | Result |
+|---|---|
+| Lines containing `react` | **221** |
+| Files containing `react` | **149** |
+| Import statements with module specifier exactly `'react'` | **158** |
+| Files with any import line containing `react` | **124** |
+
+Representative import matches (grep exit code 0 — matches found):
+
+- `packages/extensions/cordis-client-runner/src/client/evaluator.ts:10: import * as React from 'react'`
+- `packages/extensions/ui-cordis/src/client/CordisPanel.tsx:3: import { useEffect, useRef, useState } from 'react'`
+- `packages/client/web/src/seed.ts:9-12: import * as React from 'react'` / `'react/jsx-runtime'` / `'react-dom'` / `'react-dom/client'`
+- `packages/test-support/client-runtime/src/index.ts:19-22: import { createElement, Fragment, useSyncExternalStore } from 'react'` / `'@testing-library/react'`
+- `packages/client/ui-primitives/src/Menu.tsx:11: import { useEffect, useLayoutEffect, useRef, useState } from 'react'`
+- Plus ~150 more across `ui-*` client packages, `web-react`, `ui-conversation`, etc.
+
+## Verdict: **FAIL** — 149 files under `src/` contain the string "react", and at least 124 of them have import statements referencing it (158 lines import directly from `'react'`).

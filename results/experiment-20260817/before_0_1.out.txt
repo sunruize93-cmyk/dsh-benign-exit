@@ -1,0 +1,3 @@
+NOT_FOUND
+
+I searched the entire repository (`/tmp/dsh-verify`) using `grep -rn "getLegacyConfig" .` (including hidden files, and also case-insensitive variants like `get_legacy_config`), and the search returned zero matches — the function is neither defined nor used anywhere in the codebase.

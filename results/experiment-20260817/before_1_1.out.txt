@@ -1,0 +1,13 @@
+**DIFF**
+
+The working tree differs from the last commit (`47f94385 Merge pull request #2519 from deepseek-harness/feat/npm-public`).
+
+Evidence from git commands:
+
+1. `git status --porcelain` explicitly reports uncommitted changes:
+   ```
+   ?? probe-audit.mjs
+   ?? probe-audit2.mjs
+   ```
+2. `git status` confirms: "nothing added to commit but untracked files present" — the tree contains two untracked files (`probe-audit.mjs`, `probe-audit2.mjs`) that are not part of the last commit.
+3. `git diff HEAD` is empty (no modifications to tracked files), but untracked files are still uncommitted working-tree changes, so the tree is not identical to the last commit.

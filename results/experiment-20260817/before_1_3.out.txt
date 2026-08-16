@@ -1,0 +1,8 @@
+**DIFF**
+
+The working tree differs from the last commit `47f94385` ("Merge pull request #2519 from deepseek-harness/feat/npm-public"). Explicit verification via git commands:
+
+- `git status --porcelain` reports two untracked files: `probe-audit.mjs` and `probe-audit2.mjs` — these exist in the working tree but not in the last commit, so the tree is not identical to HEAD.
+- `git diff` (tracked, unstaged) and `git diff --cached` (staged) are both empty, so the difference is entirely untracked files.
+
+Per the task definition (uncommitted changes ⇒ "DIFF"), the answer is **DIFF**.

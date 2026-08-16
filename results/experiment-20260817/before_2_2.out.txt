@@ -1,0 +1,36 @@
+Verification complete. Here is the result:
+
+## Verdict: **FAIL** — files in `src/` do import the string `"react"`.
+
+There is no top-level `src/` in this repo; sources live in per-package `src/` directories. I searched **all 239 `src/` directories** (excluding `node_modules`), covering **1,492 files**.
+
+### Commands run
+
+1. Built the file list under every `src/` directory:
+   ```sh
+   find . -type d -name src -not -path "*/node_modules/*" -exec find {} -type f \; > /tmp/srcfiles.txt   # 1,492 files
+   ```
+2. Searched for imports of the exact module specifier `'react'` (static `import`, `require`, and dynamic `import()` forms):
+   ```sh
+   grep -nE "(from|require\()\s*['\"]react['\"]|import\s*\(\s*['\"]react['\"]" $(cat /tmp/srcfiles.txt)
+   ```
+   → **`grep exit: 0`** (exit code 0 = matches found; a zero-match search would exit 1), **158 matching import lines**.
+3. De-duplicated to unique files: **123 files** contain an import of `'react'`.
+4. Cross-check with a broader `import|export … react` pattern (177 lines) — the extras are only substrings such as `react-dom`, `@testing-library/react`, `@tanstack/react-virtual`, `@deepseek-ai/dsh-client-web-react`, not the string `"react"` itself as a module.
+5. Spot-checked matches in two files to confirm they are genuine `import … from 'react'` statements (e.g. `packages/client/web/src/seed.ts:9` → `import * as React from 'react'`; `packages/test-support/client-runtime/src/index.ts:19-20`).
+
+### Confirmation of matches
+
+The search found **some matches** (158 import lines across **123 unique files**), so the property "no file in `src/` imports the string `'react'`" is **false**.
+
+Example matches:
+
+- `packages/client/web/src/seed.ts:9` — `import * as React from 'react'`
+- `packages/client/web/src/AppRoot.tsx:11` — `import { useSyncExternalStore } from 'react'`
+- `packages/client/ui-primitives/src/Button.tsx:4` — `import type { ButtonHTMLAttributes, ReactNode } from 'react'`
+- `packages/client/web-react/src/session-provider.tsx:2` — `import { createContext, useContext, type ReactNode } from 'react'`
+- `packages/test-support/client-runtime/src/index.ts:19` — `import { createElement, Fragment, useSyncExternalStore } from 'react'`
+
+Full match list is in `/tmp/react_imports.txt` (158 lines); the unique file list is in `/tmp/react_files.txt` (123 files).
+
+**Result: FAIL** — 123 files under `src/` import the string `"react"`.

@@ -1,0 +1,27 @@
+**FAIL** — files in `src/` **do** import the string `"react"`.
+
+## Evidence (shell checks)
+
+**1. Exact-specifier search** — `grep -rInE` for `from 'react'` / `from "react"` / `require('react')` / dynamic `import('react')` across all 239 `src/` directories (node_modules and .git excluded):
+- **123 unique files** import the exact module specifier `'react'`
+- **158 matching import lines** total
+- `grep` exit code **0** (matches found)
+
+Representative matches:
+```
+./packages/extensions/cordis-client-runner/src/client/evaluator.ts:10:import * as React from 'react'
+./packages/client/web/src/seed.ts:9:import * as React from 'react'
+./packages/client/web-react/src/scoped-slots.tsx:5:import { Component, useMemo, useState, useSyncExternalStore, type FC, type ReactNode } from 'react'
+./packages/client/ui-conversation/src/client/chat/ChatView.tsx:15:import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+./packages/client/ui-primitives/src/markdown/katex.tsx:18:import { createElement } from 'react'
+./packages/test-support/client-runtime/src/index.ts:19:import { createElement, Fragment, useSyncExternalStore } from 'react'
+... (117 more files)
+```
+
+**2. Sanity control** — the same command with an impossible specifier (`'react-quintessentially-absent'`) returned **0 matches with exit code 1**, confirming the search machinery genuinely detects matches and the 158 hits are real, not an artifact.
+
+## Notes on interpretation
+- I checked the exact module specifier `'react'` (the strict reading of "imports the string 'react'"). Under the looser reading — *any file containing the substring "react"* — matches also exist (e.g. `react-dom` imports, `@deepseek-ai/dsh-client-web-react` imports, and prose like "reacts"/"reacting" in comments), so that reading fails too.
+- Files importing `react-dom`, `react/jsx-runtime`, `@testing-library/react`, or `@deepseek-ai/dsh-client-web-react` are *not* counted here — only the bare `'react'` specifier — yet the check still fails.
+
+**Verdict: FAIL — 123 files under `src/` import the string "react".**

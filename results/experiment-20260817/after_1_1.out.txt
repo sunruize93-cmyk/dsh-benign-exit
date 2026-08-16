@@ -1,0 +1,13 @@
+**DIFF**
+
+The working tree differs from the last commit. `git status --porcelain` explicitly reports two untracked files that exist in the tree but not in the last commit:
+
+- `?? probe-audit.mjs`
+- `?? probe-audit2.mjs`
+
+Verification commands run:
+- `git status --porcelain` → 2 lines of untracked files (`??` entries)
+- `git diff HEAD --stat` → empty (no modifications to tracked files)
+- `git diff --cached --stat` → empty (nothing staged)
+
+Since untracked files are part of the working tree and absent from `HEAD`, the tree is not identical to the last commit.

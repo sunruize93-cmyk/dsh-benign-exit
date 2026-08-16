@@ -1,0 +1,3 @@
+NOT_FOUND
+
+Searched with shell commands (`grep -rn` and `git grep`) across the entire working tree, including a case-insensitive pass over all tracked files (7,412 files). No definition or usage of `getLegacyConfig` exists anywhere in the codebase.

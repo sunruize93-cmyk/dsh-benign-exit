@@ -1,0 +1,16 @@
+Verification complete.
+
+## Result: **FAIL** — files under `src/` do import the string "react"
+
+**What I checked:** There is no root-level `src/` directory in this repo, so I searched every `src/` directory in the repo (`packages/**/src`, `apps/*/src`, `python/**/src`, `native/**/src`, `vendor/*/src` — 239 `src/` dirs total) using `grep -rn` with a regex matching `from 'react'` / `from "react"`, `require('react')`, dynamic `import('react')`, and re-exports.
+
+**Search results — the search found real matches:**
+- **158 matching lines** across **123 unique files** under `src/` directories.
+- Confirmed examples (not false positives):
+  - `packages/client/web/src/seed.ts:9: import * as React from 'react'`
+  - `packages/client/web/src/AppRoot.tsx:11: import { useSyncExternalStore } from 'react'`
+  - `packages/client/ui-conversation/src/client/chat/MessageItem.tsx:6: import { memo, useEffect, useMemo, useState } from 'react'`
+  - `packages/client/ui-primitives/src/Button.tsx:4: import type { ButtonHTMLAttributes, ReactNode } from 'react'`
+  - `packages/test-support/client-runtime/src/index.ts:19: import { createElement, Fragment, useSyncExternalStore } from 'react'`
+
+**Conclusion:** Since 123 files under `src/` import the string "react" (all in the `packages/client/*` and related client/UI packages), the statement "no file in src/ imports the string 'react'" is **false** → **FAIL**.

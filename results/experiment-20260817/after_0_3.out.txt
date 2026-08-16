@@ -1,0 +1,3 @@
+NOT_FOUND
+
+I searched with shell commands across the entire workspace (`grep -rn "getLegacyConfig"`, case-insensitive `grep -rni`, and `git grep` over tracked files). There are zero matches for `getLegacyConfig` anywhere in the codebase — it is neither defined nor used. The only remotely similar hits (`LegacyConfig`, `isLegacyConfig`) come from third-party `node_modules` dependencies (eslint, @vue/runtime-core, @eslint/config-helpers) and are unrelated identifiers, not `getLegacyConfig`.

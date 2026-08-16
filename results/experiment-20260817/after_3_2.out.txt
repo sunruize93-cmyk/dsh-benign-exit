@@ -1,0 +1,9 @@
+**NO** — `nonexistent-module.ts` does not exist anywhere under any `src/` in this repository (there is no top-level `src/` here; each package has its own `src/` under `packages/`, and the file appears in none of them).
+
+Exact exit statuses of the checks I ran:
+
+1. `find src -name "nonexistent-module.ts"` → **exit 1** — but this is an *error* exit (`src: No such file or directory`), because this repo has no top-level `src/`, so it is not a valid existence signal.
+2. `find . -type f -name "nonexistent-module.ts"` (whole tree) → **exit 0** — searched successfully, zero matches.
+3. `find` across every `src/` directory for that filename → **exit 0** — searched successfully, zero matches.
+
+Exit statuses 0 on checks 2 and 3 confirm the search completed without errors and found no such file.

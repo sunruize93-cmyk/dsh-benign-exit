@@ -1,0 +1,8 @@
+DIFF
+
+The working tree differs from the last commit: `git status --porcelain` lists two untracked files that are not in the last commit:
+
+- `probe-audit.mjs`
+- `probe-audit2.mjs`
+
+Tracked files show no modifications (`git diff --exit-code HEAD` exited 0), but the untracked files make the tree non-identical to HEAD, so the answer is **DIFF**.

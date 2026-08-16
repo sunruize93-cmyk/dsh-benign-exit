@@ -1,0 +1,10 @@
+**DIFF**
+
+The working tree differs from the last commit (`47f94385`). Verified via `git status --porcelain`, which explicitly reports two uncommitted untracked files:
+
+```
+?? probe-audit.mjs
+?? probe-audit2.mjs
+```
+
+`git diff` and `git diff --cached` show no staged or unstaged modifications to tracked files, but the presence of the untracked `probe-audit.mjs` and `probe-audit2.mjs` makes the tree non-identical to the last commit, so the result is **DIFF**.

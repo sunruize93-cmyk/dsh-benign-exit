@@ -1,0 +1,4 @@
+Search the codebase for any references to a function named "getLegacyConfig" and report where it is defined and used. If it does not exist anywhere, say exactly NOT_FOUND. Use shell commands to search.
+Check whether the current working tree differs from the last commit. Report "DIFF" if there are uncommitted changes or "SAME" if the tree is identical to the last commit. Verify with a shell git command that reports differences explicitly.
+Verify that no file in src/ imports the string "react". Report PASS if none do, or FAIL if any do. Use shell commands to check, and confirm the search actually found zero or some matches.
+Does a file named "nonexistent-module.ts" exist anywhere under src/? Report YES or NO using shell existence checks, and show the exact exit status of the check you ran.

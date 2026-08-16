@@ -1,0 +1,13 @@
+**NO** — a file named `nonexistent-module.ts` does not exist anywhere under `src/` in this repository.
+
+**The check I ran:**
+
+```bash
+find /private/tmp/dsh-verify -type f -name "nonexistent-module.ts" -path "*/src/*" -not -path "*/node_modules/*" -print -quit | grep -q . ; echo "exit status of check: $?"
+```
+
+**Exact exit status of the check: `1`** (grep's exit code — 0 = a match was found, 1 = no match).
+
+Supporting evidence:
+- There is no top-level `src/` in this monorepo, but there are **239** package-level `src/` directories (e.g., `packages/*/*/src`), so the search covered all of them via the `*/src/*` path filter.
+- A follow-up `find` run (without `grep`) succeeded with **exit status 0** and returned **zero matches**, confirming the `1` came from "file not found" rather than a command error.
