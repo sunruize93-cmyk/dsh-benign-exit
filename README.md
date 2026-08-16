@@ -10,7 +10,7 @@ A model that runs `grep` and finds nothing sees `[exit code: 1]`, may read the s
 
 This plugin makes the exit code **self-describing** at the layer the model actually sees: when the leading command is a known tool and the exit code is a documented benign outcome, the model-facing result is annotated so the model sees *why* the exit is normal.
 
-> **Scope of this claim.** The plugin provably changes what the model sees for benign outcomes (verified against the real harness machinery below). Whether that measurably reduces requests/time/tokens depends on model behavior and task; we have **not** run a live model yet and make no impact claim.
+> **Scope of this claim.** The plugin provably changes what the model sees for benign outcomes (verified against the real harness machinery below). A live before/after experiment found a **pooled −20% billed input tokens** on an engineered 4-task set (see below) — but the per-run typical effect is small (~+3%), and the win concentrates in shell-heavy re-verification tasks. Read the full honest breakdown in the experiment section.
 
 ## How it works
 
@@ -20,7 +20,7 @@ Two layers:
 
    ```
    (no output)
-   (benign: no matching lines — expected, not a failure)
+   (exit 1 = no matching lines — the command's documented meaning)
    [exit code: 1]
    ```
 
@@ -37,7 +37,7 @@ The built-in table only covers **documented** normal outcomes:
 | `grep`, `egrep`, `fgrep`, `rg`, `ack` | 1 | no matching lines |
 | `diff`, `cmp`, `comm` | 1 | inputs differ |
 | `test`, `[` | 1 | condition is false |
-| `which`, `type`, `command -v` | 1 | not found (informational) |
+| `which`, `type` | 1 | not found (informational) |
 | `jq -e` | 1 | filter evaluated to false or null |
 | `git grep` | 1 | no matching lines |
 | `git diff --exit-code` / `--quiet` | 1 | differences exist |
@@ -53,7 +53,9 @@ The annotation is inserted as a line **above** the real `[exit code: N]` marker 
 - **Background jobs**: `job_output` renders a different format (`[status: completed, exit code: 1]`) via a different tool; not annotated.
 - **Terminal channels** (`terminal_send` / `terminal_read`): a different marker format (`exited code=N`); not annotated.
 - **Explicit paths** (`./script.sh`): never treated as a known tool.
+- **Wrappers** (`sudo`, `env`, `nice`, `nohup`, `timeout`, `sh -c`, `command`, leading env-assignments) and **any redirection** (`>`, `<`, `2>&1`, heredocs): rejected outright — a wrapper or redirect failure settles on exit 1 and must not be attributed to the tool.
 - **Real failures** (`grep` exit 2, any unknown command, any exit not in the table): untouched. The built-in table is authoritative — user extra rules can never mask a real failure for a built-in command.
+- **Semantic limit:** for `test`/`[`/`which`/`type`/`diff`, exit 1 is the tool's *documented* meaning, but it can still be **task-relevant** (e.g. `test -f /critical/file` missing is the answer). The annotation wording therefore says "report it, don't re-investigate" rather than "this is fine" — the model is told to report the outcome, just not to treat the command as broken. If you need `test`/`which` to never be annotated, set `extraRules` to shadow them is not supported for built-ins; instead disable `annotate` for those cases (or open an issue).
 - **Windows pwsh kills**: on Windows a killed pwsh process settles as bare exit 1 with no signal marker, so on Windows hosts the plugin does **not** annotate pwsh results at all (a real kill must not be masked). On macOS/Linux, pwsh kills report a signal and are skipped by the structured-exit gate. pwsh is hooked by design but has no e2e coverage in this repo (no PowerShell here).
 
 Also note: DeepSeek Harness ships a `grep` *tool* (`@deepseek-ai/dsh-tool-fs-search`, in the base bundle) that already steers file-content search away from shell `grep` and returns "0 matches" as a success. The remaining exposure this plugin addresses is therefore mostly **non-file-search greps** (`git grep`, greps over command output), other benign exits (`git diff --exit-code`, `test -f`, `which`, `diff`, `rg`, `jq -e`), and the model's *standing instruction* to investigate every non-zero exit.
@@ -82,7 +84,7 @@ dsh --profile web --dump-config | grep benign-exit     # should show the layer
 ```
 
 or run a no-match `grep` in the agent and check the result shows
-`(benign: no matching lines — expected, not a failure)` above the exit marker.
+`(exit 1 = no matching lines — the command's documented meaning)` above the exit marker.
 
 ### Headless / one-shot tasks
 
@@ -92,8 +94,6 @@ Works for `--profile headless` too:
 dsh plugin --profile headless add dsh-benign-exit
 dsh --profile headless "search for getLegacyConfig and report whether it exists"
 ```
-
-## Configuration
 
 ## Configuration
 
@@ -121,11 +121,11 @@ Example:
 
 ## Verification
 
-> **What is proven / what is not.** No end-to-end agent runs with a real LLM have been performed yet — the token/time/cost *impact* is not measured by us and no behavioral claim is made. What *is* proven, against the real harness machinery:
+> **What is proven / what is not.** The plugin deterministically changes the model-facing text, verified against the real harness machinery below. A live before/after experiment (see the section above) measured token/time deltas on an engineered 4-task set; read its honest caveats before quoting any number. What is *mechanically* proven:
 
 - **36 unit tests** of the parser/annotator (edge cases, compound-command rejection, masking-prevention, structured-exit gating, wrapper forms, last-marker anchoring).
 - **10 integration tests** inside the real `ToolRuntime` dispatch pipeline (`tools/post-execute` waterfall): benign markers get annotated; real errors (exit 2), unknown commands, non-bash tools, **exit-0 runs whose output merely contains `[exit code: 1]`**, **signal-killed runs**, and **timed-out runs** all pass through untouched; downstream `additionalContexts` survive; the system-prompt section registers.
-- **6 end-to-end tests with the REAL bash tool** (spawning real `grep`/`git` processes): a real no-match `grep` produces model-facing content `(benign: no matching lines — expected, not a failure)\n[exit code: 1]`; real `grep` error (exit 2) and matching `grep` (exit 0) pass through untouched; `git diff --exit-code` with differences is annotated; and the harness's own `parseExitStatus` still reads the annotated result as exit **1** (UI exit pill intact).
+- **6 end-to-end tests with the REAL bash tool** (spawning real `grep`/`git` processes): a real no-match `grep` produces model-facing content `(exit 1 = no matching lines — the command's documented meaning)\n[exit code: 1]`; real `grep` error (exit 2) and matching `grep` (exit 0) pass through untouched; `git diff --exit-code` with differences is annotated; and the harness's own `parseExitStatus` still reads the annotated result as exit **1** (UI exit pill intact).
 
 Run them yourself:
 
@@ -141,9 +141,7 @@ cd dsh-benign-exit && npm test                       # unit tests
 
 We ran a real before/after comparison on `deepseek-v4-flash` (24 headless runs: 4 tasks × 3 rounds × with/without the plugin). Full raw data + report: [`results/experiment-20260817/`](results/experiment-20260817/report.md).
 
-Aggregate over the 24 runs: **≈13% fewer steps, ≈20% fewer billed input tokens, ≈22% lower estimated cost**. Answers were equivalent with and without the plugin on every task.
-
-Honest caveats (same report): the win is **not uniform** — it concentrates in tasks where the model repeatedly re-verifies via shell (task 2: −31% steps, −38% billed input); one task was noisy (worse), one neutral. Also, the harness steers file-content search to its built-in `grep` tool (out of this plugin's scope), so the measured savings are a **conservative lower bound** for bash-heavy workflows.
+Pooled over the 24 runs: **≈13% fewer steps, ≈20% fewer billed input tokens, ≈22% lower estimated cost** — but this is a token-weighted total dominated by one task. The **per-run typical effect is small (~+3%)**; pooled **excluding the dominant task**: −2%. The one solid signal is a "repeatedly re-verify a huge search surface via shell" task (all 3 after-rounds beat all 3 before-rounds; −38% billed input). The task set was deliberately negative-result-shaped, so these numbers are an **upper bound** for representative bash work, not a lower bound. Answers were equivalent with/without the plugin on every task. The harness steers file-content search to its built-in `grep` tool (out of scope), so bash-averse workflows get ~zero benefit.
 
 Third-party field data (Bohu, 2026-08) measured dsh at 61 vs 32 requests, 10:38 vs 4:55 wall time, and **2.9M vs 548K input tokens**, and $0.17 vs $0.05 cost on the same task vs `pi`. That benchmark compares structurally different harnesses (its attribution to this one mechanism is the author's hypothesis, not an isolated experiment), and we have not reproduced those numbers. The over-investigation loop is the mechanism this plugin targets; it does not claim to close the whole gap.
 

@@ -58,11 +58,11 @@ export const Config = z.object({
   })).default([]),
 })
 
-const GUIDANCE = 'Exit codes are information. Commands that legitimately exit 1 on a normal outcome and must NOT be treated as failures: '
+const GUIDANCE = 'Exit codes are information, and a non-zero exit does not automatically mean "something broke". These commands exit 1 as their DOCUMENTED meaning, not as a failure: '
   + 'grep/egrep/fgrep/rg/ack (no matching lines), diff/cmp/comm (inputs differ), test/[ (condition false), '
-  + 'git grep (no matches), git diff --exit-code / --quiet (differences exist), which/type/command -v (not found), '
-  + 'jq -e (filter evaluated to false or null). When a result shows a line like `(benign: no matching lines — expected, not a failure)` '
-  + 'above the `[exit code: N]` marker, the exit is expected — report it as a normal outcome and continue; do not re-investigate it as a failure.'
+  + 'git grep (no matches), git diff --exit-code / --quiet (differences exist), which/type (not found), '
+  + 'jq -e (filter evaluated to false or null). When a result shows a line like `(exit 1 = no matching lines — the command\'s documented meaning; report it, don\'t re-investigate)` '
+  + 'above the `[exit code: 1]` marker, the exit is the command\'s documented outcome — report what it MEANS for the task and continue. The exit may still be task-relevant (e.g. a missing file you were checking for), so report it; just do not re-investigate it as a broken command.'
 
 export function apply(ctx, config) {
   if (config.annotate) {

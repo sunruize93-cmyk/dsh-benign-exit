@@ -16,7 +16,7 @@ Two layers, both model-facing:
 
    ```
    (no output)
-   (benign: no matching lines — expected, not a failure)
+   (exit 1 = no matching lines — the command's documented meaning)
    [exit code: 1]
    ```
 
@@ -26,9 +26,8 @@ Two layers, both model-facing:
 
 ## Honest scope
 
-- **Proven:** the mechanism changes what the model sees, verified against the real harness machinery — 36 unit tests, 10 integration tests in the real `tools/post-execute` pipeline, 6 e2e tests with the real bash tool (real `grep`/`git` subprocesses), including a `parseExitStatus` round-trip (exit pill stays `1`). Install path verified via `dsh plugin add` + boot.
-- **Not proven:** no live-LLM ablation yet, so no cost/time impact claim. If you run one, [scripts/measure-before-after.sh](scripts/measure-before-after.sh) does the on/off comparison.
-- **Conservative:** only simple foreground commands with documented benign exits are annotated. Compound commands, background `job_output`, terminal channels, and real errors (grep exit 2) are untouched — a real failure is never masked.
+- **Proven:** the mechanism changes what the model sees, verified against the real harness machinery — 36 unit tests, 10 integration tests in the real `tools/post-execute` pipeline, 6 e2e tests with the real bash tool (real `grep`/`git` subprocesses), including a `parseExitStatus` round-trip (exit pill stays `1`). Install path verified via `dsh plugin add` + boot. A live before/after experiment (4 tasks × 3 rounds, `deepseek-v4-flash`) showed a pooled −20% billed input — but read the report's honest caveats (per-run typical ~+3%, one task carried the win, task set engineered toward the mechanism).
+- **Conservative:** only simple foreground commands with documented benign exits are annotated — no wrappers (`sudo`/`env`/`sh -c`), no redirections, no compounds, no background/terminal channels. A wrapper or redirect failure settles on exit 1 and is deliberately never attributed to the tool. Real errors (grep exit 2) are untouched. Reproduce with [scripts/run-before-after.sh](scripts/run-before-after.sh) + [scripts/analyze-results.py](scripts/analyze-results.py).
 
 ## Install
 

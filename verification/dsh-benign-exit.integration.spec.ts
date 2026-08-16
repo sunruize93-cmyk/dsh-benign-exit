@@ -59,7 +59,7 @@ describe('dsh-benign-exit integration', () => {
     const tool = bashTool({ exitCode: 1, text: 'scan done\n\n[exit code: 1]' })
     ctx.tools.register(tool)
     const result = await runBash(ctx, 'grep TODO src/index.js', tool)
-    expect(textOf(result)).toContain('benign: no matching lines')
+    expect(textOf(result)).toContain('exit 1 = no matching lines')
   })
 
   it('annotates git diff --exit-code differences', async () => {
@@ -67,7 +67,7 @@ describe('dsh-benign-exit integration', () => {
     const tool = bashTool({ exitCode: 1 })
     ctx.tools.register(tool)
     const result = await runBash(ctx, 'git diff --exit-code HEAD HEAD~1', tool)
-    expect(textOf(result)).toContain('benign: differences exist')
+    expect(textOf(result)).toContain('exit 1 = differences exist')
   })
 
   it('leaves a real grep error (exit 2) untouched', async () => {
@@ -129,7 +129,7 @@ describe('dsh-benign-exit integration', () => {
     ctx.tools.register(tool)
     const result = await runBash(ctx, 'grep TODO src', tool)
     // The annotation must not drop the downstream's context.
-    expect(textOf(result)).toContain('benign: no matching lines')
+    expect(textOf(result)).toContain('exit 1 = no matching lines')
     expect(result.additionalContexts?.some((m) => JSON.stringify(m).includes('downstream-ctx-marker'))).toBe(true)
   })
 

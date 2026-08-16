@@ -80,8 +80,8 @@ describe('dsh-benign-exit with the real bash tool', () => {
 
     const result = await call(ctx, { command: `grep zeta ${file}`, description: "search for zeta" }, agent)
     const text = textOf(result)
-    expect(text).toContain('benign: no matching lines')
-    expect(text).toContain('(benign:')
+    expect(text).toContain('exit 1 = no matching lines')
+    expect(text).toContain('documented meaning')
   })
 
   it('leaves a real grep error (exit 2) untouched', async () => {
@@ -116,8 +116,8 @@ describe('dsh-benign-exit with the real bash tool', () => {
 
     const result = await call(ctx, { command: `git diff --no-index --exit-code ${a} ${b}`, description: "diff two files" }, agent)
     const text = textOf(result)
-    expect(text).toContain('benign: differences exist')
-    expect(text).toContain('(benign:')
+    expect(text).toContain('exit 1 = differences exist')
+    expect(text).toContain('documented meaning')
   })
 
   it('preserves the harness parseExitStatus contract: annotated result still reads exit 1', async () => {
@@ -128,12 +128,12 @@ describe('dsh-benign-exit with the real bash tool', () => {
 
     const result = await call(ctx, { command: `grep zeta ${file}`, description: "search for zeta" }, agent)
     const text = textOf(result)
-    expect(text).toContain('(benign: no matching lines')
+    expect(text).toContain('(exit 1 = no matching lines')
     // The real exit marker must remain the literal final line, so the UI
     // terminal card (parseExitStatus) still shows exit 1.
     const parsed = parseExitStatus(text)
     expect(parsed.exitCode).toBe(1) // UI pill stays 1 — contract preserved
-    expect(parsed.body).toContain('benign: no matching lines') // model still sees it
+    expect(parsed.body).toContain('exit 1 = no matching lines') // model still sees it
     expect(parsed.body).not.toContain('[exit code: 1]') // marker parsed out of the body
   })
 

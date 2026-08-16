@@ -23,13 +23,18 @@ test('parse: git grep identified', () => {
   assert.equal(parseLeadingCommand('git grep FIXME src')?.base, 'git grep')
 })
 
-test('parse: wrapper unwrapping (bash -c, sudo, env, timeout)', () => {
-  assert.equal(parseLeadingCommand("bash -c 'grep foo file'")?.base, 'grep')
-  assert.equal(parseLeadingCommand("sh -c \"rg bar dir\"")?.base, 'rg')
-  assert.equal(parseLeadingCommand('sudo grep foo /etc/passwd')?.base, 'grep')
-  assert.equal(parseLeadingCommand('env FOO=1 grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('timeout 10s grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('FOO=1 BAR=2 env grep foo file')?.base, 'grep')
+test('parse: WRAPPERS are rejected (their failures exit 1 and must not be masked)', () => {
+  assert.equal(parseLeadingCommand("bash -c 'grep foo file'"), null)
+  assert.equal(parseLeadingCommand("sh -c \"rg bar dir\""), null)
+  assert.equal(parseLeadingCommand('sudo grep foo /etc/passwd'), null)
+  assert.equal(parseLeadingCommand('sudo -u deploy grep foo file'), null)
+  assert.equal(parseLeadingCommand('env FOO=1 grep foo file'), null)
+  assert.equal(parseLeadingCommand('env -i grep foo file'), null)
+  assert.equal(parseLeadingCommand('nice -n 5 grep foo file'), null)
+  assert.equal(parseLeadingCommand('nohup grep foo file'), null)
+  assert.equal(parseLeadingCommand('timeout 10s grep foo file'), null)
+  assert.equal(parseLeadingCommand('timeout -k 1 10 grep foo file'), null)
+  assert.equal(parseLeadingCommand('FOO=1 BAR=2 env grep foo file'), null)
 })
 
 test('parse: compound commands rejected (exit code is ambiguous)', () => {
@@ -42,10 +47,14 @@ test('parse: compound commands rejected (exit code is ambiguous)', () => {
   assert.equal(parseLeadingCommand('(cd /tmp && grep foo a)'), null)
 })
 
-test('parse: fd redirects still allowed', () => {
-  assert.equal(parseLeadingCommand('grep foo file 2>&1')?.base, 'grep')
-  assert.equal(parseLeadingCommand('grep foo file 2>/dev/null')?.base, 'grep')
-  assert.equal(parseLeadingCommand('grep foo file >/dev/null 2>&1')?.base, 'grep')
+test('parse: ANY redirection rejected (failed redirect exits 1 → would mask)', () => {
+  assert.equal(parseLeadingCommand('grep foo file 2>&1'), null)
+  assert.equal(parseLeadingCommand('grep foo file 2>/dev/null'), null)
+  assert.equal(parseLeadingCommand('grep foo file >/dev/null 2>&1'), null)
+  assert.equal(parseLeadingCommand('grep foo file > out.txt'), null)
+  assert.equal(parseLeadingCommand('grep foo < input.txt'), null)
+  assert.equal(parseLeadingCommand('grep foo file &> out.txt'), null)
+  assert.equal(parseLeadingCommand('grep foo <<< "hello"'), null)
 })
 
 test('parse: explicit paths and scripts are unknown', () => {
@@ -53,9 +62,8 @@ test('parse: explicit paths and scripts are unknown', () => {
   assert.equal(parseLeadingCommand('/usr/bin/grep foo file'), null)
 })
 
-test('parse: command -v is meaningful, command SUBCOMMAND is not', () => {
-  assert.equal(parseLeadingCommand('command -v node')?.base, 'command-v')
-  assert.equal(parseLeadingCommand('command -v node')?.base === 'command-v', true)
+test('parse: command / command -v rejected (shell builtin)', () => {
+  assert.equal(parseLeadingCommand('command -v node'), null)
   assert.equal(parseLeadingCommand('command ls'), null)
 })
 
@@ -64,22 +72,13 @@ test('parse: test and [ are identified', () => {
   assert.equal(parseLeadingCommand('[ -f package.json ]')?.base, '[')
 })
 
-test('parse: wrapper option forms (sudo -u, sudo -E, env -i, nice)', () => {
-  assert.equal(parseLeadingCommand('sudo -u deploy grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('sudo -E grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('env -i grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('nice -n 5 grep foo file')?.base, 'grep')
-})
-
-test('parse: timeout flag forms', () => {
-  assert.equal(parseLeadingCommand('timeout -k 1 10 grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('timeout --signal=KILL 5m grep foo file')?.base, 'grep')
-  assert.equal(parseLeadingCommand('timeout 10s grep foo file')?.base, 'grep')
-})
-
 test('parse: git -C and --no-pager before subcommand', () => {
   assert.equal(parseLeadingCommand('git -C repo diff --exit-code HEAD')?.base, 'git diff')
   assert.equal(parseLeadingCommand('git --no-pager grep FIXME src')?.base, 'git grep')
+})
+
+test('parse: bare env-assignment rejected', () => {
+  assert.equal(parseLeadingCommand('FOO=1 grep foo file'), null)
 })
 
 test('annotate: jq --exit-status works like -e', () => {
@@ -93,7 +92,8 @@ test('annotate: grep exit 1 → marked benign', () => {
   const r = annotateBenignExit(EXIT1, 'grep TODO src/index.js')
   assert.equal(r.changed, true)
   // Annotation sits ABOVE the marker; the marker stays the literal last line.
-  assert.match(r.text, /\(benign: no matching lines — expected, not a failure\)\n\[exit code: 1\]$/)
+  assert.match(r.text, /exit 1 = no matching lines — the command's documented meaning/)
+  assert.match(r.text, /\n\[exit code: 1\]$/)
 })
 
 test('annotate: marker text itself is never rewritten (UI exit-status contract)', () => {
@@ -121,7 +121,7 @@ test('annotate: unknown command untouched', () => {
 test('annotate: git diff --exit-code exit 1 → benign', () => {
   const r = annotateBenignExit(EXIT1, 'git diff --exit-code HEAD HEAD~1')
   assert.equal(r.changed, true)
-  assert.match(r.text, /benign: differences exist/)
+  assert.match(r.text, /exit 1 = differences exist/)
 })
 
 test('annotate: git diff without --exit-code untouched', () => {
@@ -137,7 +137,7 @@ test('annotate: git grep exit 1 → benign', () => {
 test('annotate: which not-found → benign (informational)', () => {
   const r = annotateBenignExit(EXIT1, 'which nonexistent-tool')
   assert.equal(r.changed, true)
-  assert.match(r.text, /benign: not found/)
+  assert.match(r.text, /exit 1 = not found/)
 })
 
 test('annotate: jq needs -e; without it untouched', () => {
@@ -151,10 +151,10 @@ test('annotate: pipeline / compound never annotated', () => {
   assert.equal(annotateBenignExit(EXIT1, 'grep foo a && echo yes').changed, false)
 })
 
-test('annotate: bash -c wrapper unwraps to grep', () => {
+test('annotate: bash -c wrapper is NOT annotated (wrapper exit 1 must not be masked)', () => {
   const r = annotateBenignExit(EXIT1, "bash -c 'grep foo file'")
-  assert.equal(r.changed, true)
-  assert.match(r.text, /benign: no matching lines/)
+  assert.equal(r.changed, false)
+  assert.equal(r.text, EXIT1)
 })
 
 test('annotate: idempotent — already-annotated marker untouched', () => {
@@ -168,13 +168,13 @@ test('annotate: multiple markers — only the LAST (real) marker changes', () =>
   const r = annotateBenignExit('a\n[exit code: 2]\nb\n[exit code: 1]', 'grep foo file')
   assert.equal(r.changed, true)
   assert.match(r.text, /\[exit code: 2\]/)
-  assert.match(r.text, /benign: no matching lines/)
+  assert.match(r.text, /exit 1 = no matching lines/)
 })
 
 test('annotate: literal marker inside content is NOT annotated — only trailing real marker', () => {
   const r = annotateBenignExit('line [exit code: 1] from file\n\n[exit code: 1]', 'grep foo file')
   assert.equal(r.changed, true)
-  assert.equal(r.text.split('benign:').length, 2) // exactly one annotation
+  assert.equal(r.text.split('documented meaning').length, 2) // exactly one annotation
   assert.match(r.text, /line \[exit code: 1\] from file/) // content line untouched
 })
 
@@ -193,7 +193,7 @@ test('annotate: extraRules extend the table', () => {
     command: 'mytool', exitCodes: [1], reason: 'no changes to apply',
   }])
   assert.equal(r.changed, true)
-  assert.match(r.text, /benign: no changes to apply/)
+  assert.match(r.text, /exit 1 = no changes to apply/)
 })
 
 test('annotate: expectedExitCode mismatch prevents annotation', () => {
@@ -212,7 +212,7 @@ test('annotate: non-integer extra exit codes are ignored', () => {
     command: 'mytool', exitCodes: [1.5, -3, NaN, 1], reason: 'edge',
   }])
   assert.equal(r.changed, true)
-  assert.match(r.text, /benign: edge/)
+  assert.match(r.text, /exit 1 = edge/)
 })
 
 test('annotate: extraRules cannot override a REAL error for grep', () => {

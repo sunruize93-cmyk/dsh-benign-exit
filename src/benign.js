@@ -22,7 +22,6 @@ export const BENIGN_CODES = {
   '[': { 1: 'condition is false' },
   which: { 1: 'not found' },
   type: { 1: 'not found' },
-  'command-v': { 1: 'not found' },
   jq: { 1: 'filter evaluated to false or null' },
   'git grep': { 1: 'no matching lines' },
   // git diff / git diff-index are only annotated when the caller used
@@ -31,7 +30,11 @@ export const BENIGN_CODES = {
   'git diff-index': { 1: 'differences exist' },
 }
 
-const SHELL_WRAPPER = /^(?:bash|sh|zsh|dash)(?:\s+-[a-zA-Z]+)*\s+-c\s+([\s\S]*)$/
+/** Shells whose exit code belongs to the shell, not a tool. */
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'csh', 'ksh', 'fish'])
+
+/** Wrappers/privilege tools whose exit code may reflect the wrapper, not the tool. */
+const WRAPPERS = new Set(['sudo', 'env', 'nice', 'nohup', 'timeout', 'command'])
 
 /**
  * Quote-aware scan that rejects command lines with shell composition
@@ -52,16 +55,15 @@ function hasTopLevelOperators(cmd) {
     if (ch === '$' && cmd[i + 1] === '(') return true
     if (ch === '(' || ch === ')') return true
     if (ch === '{' || ch === '}') return true
-    if (ch === '<' && cmd[i + 1] === '<') return true // heredoc / here-string
+    // ANY redirection (<, >, here-doc, here-string, fd redirect) is rejected:
+    // a failed redirection exits 1 and the exit code would then belong to the
+    // SHELL, not the leading tool. Annotating it as "benign: no match" would
+    // mask a real failure (the single worst failure mode for this plugin).
+    if (ch === '<' || ch === '>') return true
     if (ch === '&') {
-      // Allow fd redirects (2>&1, >&2) and the &> combined redirect; reject
-      // everything else (backgrounding &&, &, ||).
-      const prevPrev = cmd[i - 2]
-      const prev = cmd[i - 1]
-      const next = cmd[i + 1]
-      if (next === '>') continue // &> combined redirect
-      if (prev === '>' && /\d/.test(prevPrev ?? '')) continue // 2>&1
-      if (prev === '>' && /\d/.test(next ?? '')) continue // >&2
+      // &> combined redirect is also a redirect → reject.
+      if (cmd[i + 1] === '>') return true
+      // Anything else with & is backgrounding / && / || → reject.
       return true
     }
   }
@@ -96,14 +98,6 @@ function firstTokens(cmd, n) {
   return out
 }
 
-function stripOuterQuotes(s) {
-  const t = s.trim()
-  if (t.length >= 2 && ((t[0] === "'" && t[t.length - 1] === "'") || (t[0] === '"' && t[t.length - 1] === '"'))) {
-    return t.slice(1, -1)
-  }
-  return t
-}
-
 /**
  * Identify the leading command of a shell command line.
  * Returns `{ base, flags }` or `null` when the command cannot be identified
@@ -114,53 +108,11 @@ export function parseLeadingCommand(raw, depth = 0) {
   if (!cmd || depth > 3) return null
   if (hasTopLevelOperators(cmd)) return null
 
-  // Strip leading environment assignments (FOO=1 BAR=2 cmd ...) and
-  // privilege / no-op wrappers (sudo, nohup, env, nice) with their common
-  // option forms, in any interleaving. `command -v` is handled later because
-  // it is itself a meaningful leading command (exit 1 = not found).
-  for (let i = 0; i < 8; i++) {
-    const assign = cmd.match(/^(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+)+/)
-    if (assign) { cmd = cmd.slice(assign[0].length); continue }
-    // Option parsing is conservative: only options known to TAKE A VALUE
-    // consume one. A generic `-\w+\s*\S*` form would greedily swallow the
-    // command itself (e.g. `sudo -E grep foo` → "grep" as -E's value), which
-    // can misidentify the real command — a false-positive risk, not just a
-    // miss. `-u` (sudo) and `-u`/`-C` (env) are the common value-taking ones.
-    const sudo = cmd.match(/^sudo(?:\s+-u\s+\S+|\s+-[A-Za-z])*\s+/)
-    if (sudo) { cmd = cmd.slice(sudo[0].length); continue }
-    const envW = cmd.match(/^env(?:\s+-u\s+\S+|\s+-C\s+\S+|\s+-[A-Za-z])*\s+/)
-    if (envW) { cmd = cmd.slice(envW[0].length); continue }
-    const nice = cmd.match(/^nice(?:\s+-n\s+\d+(?:\.\d+)?)?\s+/)
-    if (nice) { cmd = cmd.slice(nice[0].length); continue }
-    const nohup = cmd.match(/^nohup\s+/)
-    if (nohup) { cmd = cmd.slice(nohup[0].length); continue }
-    break
-  }
-
-  // Strip `timeout [opts] DURATION cmd ...` (flags and duration in any form).
-  // The main duration is the LAST token that looks like a duration; anything
-  // after it is the real command.
-  if (/^timeout\b/.test(cmd)) {
-    const rest = cmd.slice('timeout'.length).trimStart()
-    const toks = rest.split(/\s+/)
-    let durationIdx = -1
-    for (let i = toks.length - 1; i >= 0; i--) {
-      if (/^\d+(?:\.\d+)?[smhd]?$/.test(toks[i])) { durationIdx = i; break }
-    }
-    if (durationIdx >= 0 && durationIdx < toks.length - 1) {
-      cmd = toks.slice(durationIdx + 1).join(' ')
-    } else {
-      return null // ambiguous timeout form — treat as unknown
-    }
-  }
-
-  // Unwrap `sh -c '...'` / `bash -c "..."` — the inner command's exit code is
-  // what the shell reports, so it is safe (and useful) to inspect the inner
-  // leading command.
-  const shell = cmd.match(SHELL_WRAPPER)
-  if (shell) {
-    return parseLeadingCommand(stripOuterQuotes(shell[1]), depth + 1)
-  }
+  // No wrapper stripping. A wrapper's failure (sudo denied, env error, timeout
+  // expiry, sh -c parse error, leading env-assignment failure) exits 1 and the
+  // exit code then belongs to the WRAPPER, not the leading tool. Annotating it
+  // would mask a real failure. The plugin only annotates the simplest,
+  // unambiguous single-command form — that is the price of never lying.
 
   const tokens = firstTokens(cmd, 12)
   if (tokens.length === 0) return null
@@ -168,10 +120,11 @@ export function parseLeadingCommand(raw, depth = 0) {
   const first = tokens[0]
   if (first.includes('/')) return null // explicit path — could be any script
 
-  if (first === 'command') {
-    if (tokens[1] === '-v') return { base: 'command-v', flags: [] }
-    return null // command SUBCOMMAND — treat as unknown
-  }
+  // Leading env-assignments and shell builtins/wrappers (`command`, `bash`,
+  // `sh`, `sudo`, `env`, ...) whose exit 1 can come from the shell, not a
+  // tool: reject.
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(first)) return null
+  if (WRAPPERS.has(first) || SHELLS.has(first)) return null
 
   if (first === 'git') {
     // Skip global git flags before the subcommand: `-C <dir>`, `--no-pager`,
@@ -251,7 +204,7 @@ export function annotateBenignExit(text, command, extraRules = [], expectedExitC
   if (typeof text !== 'string' || !text.includes('[exit code:')) {
     return { text, changed: false }
   }
-  if (text.includes('(benign:')) return { text, changed: false } // idempotent
+  if (text.includes("the command's documented meaning")) return { text, changed: false } // idempotent
   const parsed = parseLeadingCommand(command)
   const table = effectiveTable(parsed, extraRules)
   if (!table) return { text, changed: false }
@@ -268,7 +221,7 @@ export function annotateBenignExit(text, command, extraRules = [], expectedExitC
   if (!reason) return { text, changed: false }
 
   return {
-    text: `${text.slice(0, last.index)}(benign: ${reason} — expected, not a failure)\n${text.slice(last.index)}`,
+    text: `${text.slice(0, last.index)}(exit ${code} = ${reason} — the command's documented meaning; report it, don't re-investigate)\n${text.slice(last.index)}`,
     changed: true,
   }
 }
