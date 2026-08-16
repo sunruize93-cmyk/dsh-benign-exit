@@ -1,5 +1,7 @@
 # dsh-benign-exit
 
+**English** | [简体中文](README.zh.md)
+
 Deterministically annotate benign non-zero bash/pwsh exit codes in DeepSeek Harness so models can stop **over-investigating normal results**.
 
 `grep` exits `1` when nothing matches — that is normal, not a failure. But DeepSeek Harness's bash tool tells the model:
